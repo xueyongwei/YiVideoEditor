@@ -21,7 +21,8 @@ protocol YiVideoEditorCommandProtocol: NSObjectProtocol {
 open class YiVideoEditor: NSObject {
     var videoData: YiVideoEditorData
     var commands: [Any]
-    var exportSession: AVAssetExportSession?
+    public private(set) var exportSession: AVAssetExportSession?
+    private var timer: Timer?
     public init(videoURL: URL) {
         let asset = AVURLAsset(url: videoURL)
         self.videoData = YiVideoEditorData(asset: asset)
@@ -84,11 +85,12 @@ open class YiVideoEditor: NSObject {
         addLayerCommand?.execute()
     }
     
-    public func export(exportURL: URL, completion: @escaping (AVAssetExportSession)->Void) {
-        export(exportURL: exportURL, presetName: AVAssetExportPreset1280x720, optimizeForNetworkUse: true, outputFileType: AVFileType.mov, completion: completion)
-    }
-    
-    func export(exportURL: URL, presetName: String, optimizeForNetworkUse: Bool, outputFileType: AVFileType, completion: @escaping (AVAssetExportSession)->Void) {
+    public func export(exportURL: URL,
+                presetName: String = AVAssetExportPresetHighestQuality,
+                optimizeForNetworkUse: Bool = true,
+                outputFileType: AVFileType = .mov,
+                progressCallback: @escaping ((Float)->Void),
+                completionCallback: @escaping (AVAssetExportSession)->Void) {
         applyCommands()
         if let videoDataComposition = videoData.composition?.copy() as? AVAsset {
             exportSession = AVAssetExportSession(asset: videoDataComposition, presetName: presetName)
@@ -105,14 +107,26 @@ open class YiVideoEditor: NSObject {
         exportSession?.outputFileType = outputFileType
         exportSession?.outputURL = exportURL
         exportSession?.shouldOptimizeForNetworkUse = optimizeForNetworkUse
+        self.timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] (time) in
+            guard let self else {return}
+            if let progress = exportSession?.progress {
+                progressCallback(progress)
+                if progress >= 1 {
+                    self.timer?.invalidate()
+                    self.timer = nil
+                }
+            }
+        }
         exportSession?.exportAsynchronously {
             DispatchQueue.main.async {
                 let asset = AVURLAsset(url: exportURL)
                 self.videoData = YiVideoEditorData(asset: asset)
                 self.commands = []
                 if let exportSession = self.exportSession {
-                    completion(exportSession)
+                    completionCallback(exportSession)
                 }
+                self.timer?.invalidate()
+                self.timer = nil
             }
         }
     }
