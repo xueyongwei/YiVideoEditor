@@ -117,7 +117,8 @@ open class YiVideoEditor: NSObject {
                 }
             }
         }
-        exportSession?.exportAsynchronously {
+        exportSession?.exportAsynchronously {[weak self] in
+            guard let self else {return}
             DispatchQueue.main.async {
                 let asset = AVURLAsset(url: exportURL)
                 self.videoData = YiVideoEditorData(asset: asset)
